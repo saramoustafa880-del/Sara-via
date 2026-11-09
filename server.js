@@ -9,6 +9,9 @@ const path = require('path');
 
 const piAuthRouter = require('./routes/pi-auth');
 const piPaymentsRouter = require('./routes/pi-payments');
+const travelRouter = require('./routes/travel');
+const bookingsRouter = require('./routes/bookings');
+const providerApplicationsRouter = require('./routes/provider-applications');
 
 const app = express();
 
@@ -45,12 +48,8 @@ app.use(
   })
 );
 
-app.use(
-  cors({
-    origin: true,
-    credentials: true
-  })
-);
+const allowedOrigins = (process.env.CORS_ORIGIN || '').split(',').map(value => value.trim()).filter(Boolean);
+app.use(cors({ origin: allowedOrigins.length ? allowedOrigins : false, credentials: true }));
 
 app.use(
   express.json({
@@ -170,6 +169,10 @@ app.use(
   piPaymentsRouter
 );
 
+app.use('/api/travel', travelRouter);
+app.use('/api/bookings', bookingsRouter);
+app.use('/api/providers', providerApplicationsRouter);
+
 /*
 |--------------------------------------------------------------------------
 | SARA VIA Website
@@ -179,15 +182,9 @@ app.use(
 |--------------------------------------------------------------------------
 */
 
-app.use(
-  express.static(
-    path.join(__dirname),
-    {
-      extensions: ['html'],
-      index: 'index.html'
-    }
-  )
-);
+if (!process.env.NETLIFY) {
+  app.use(express.static(path.join(__dirname, 'dist'), { extensions: ['html'], index: 'index.html', dotfiles: 'deny' }));
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -197,7 +194,7 @@ app.use(
 
 app.get('/', (req, res) => {
   res.sendFile(
-    path.join(__dirname, 'index.html')
+    path.join(__dirname, 'dist', 'index.html')
   );
 });
 
@@ -244,6 +241,7 @@ app.use((error, req, res, next) => {
 |--------------------------------------------------------------------------
 */
 
+if (require.main === module) {
 app.listen(PORT, HOST, () => {
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -261,3 +259,6 @@ app.listen(PORT, HOST, () => {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
 });
+}
+
+module.exports = app;

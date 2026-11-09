@@ -31,7 +31,10 @@ let appState = {
 */
 
 const $ = (selector) => document.querySelector(selector);
-const $$ = (selector) => Array.from(document.querySelectorAll(selector));  function capitalize(value) {     if (!value) return '';     return value.charAt(0).toUpperCase() + value.slice(1); }  function escapeHtml(value) {     return String(value)         .replaceAll('&', '&amp;')         .replaceAll('<', '&lt;')         .replaceAll('>', '&gt;')         .replaceAll('"', '&quot;')         .replaceAll("'", '&#039;'); }  function getErrorMessage(error) {     if (error && typeof error.message === 'string' && error.message.trim()) {         return error.message;     }     return 'Something went wrong. Please try again.'; }   /* \vert{}-------------------------------------------------------------------------- \vert{} Initialization Lifecycle \vert{}-------------------------------------------------------------------------- */  document.addEventListener('DOMContentLoaded', () => {     initializeEnterpriseApp(); });  async function initializeEnterpriseApp() {     try {         setMinimumDate();         initializeTravelTabs();         initializeSearch();         initializeNavigation();         initializePiButton();                  await waitForPiSDK();     } catch (error) {         console.error('[SARA VIA Enterprise] Initialization error:', error);     } }   /* \vert{}-------------------------------------------------------------------------- \vert{} Pi SDK Async Loader \vert{}-------------------------------------------------------------------------- */  async function waitForPiSDK(timeout = 10000) {     const started = Date.now();      while (typeof window.Pi === 'undefined' && Date.now() - started < timeout) {         await new Promise((resolve) => setTimeout(resolve, 100));     }      if (typeof window.Pi === 'undefined') {         console.warn('[SARA VIA Enterprise] Pi SDK unavailable in this environment.');         return false;     }      appState.piReady = true;     console.info('[SARA VIA Enterprise] Pi SDK successfully initialized.');     return true; }   /* \vert{}-------------------------------------------------------------------------- \vert{} UI Components: Travel Tabs & Search Engine \vert{}-------------------------------------------------------------------------- */  function initializeTravelTabs() {     const tabs = $$('.travel-tab');
+const $$ = (selector) => Array.from(document.querySelectorAll(selector));  function capitalize(value) {     if (!value) return '';     return value.charAt(0).toUpperCase() + value.slice(1); }  function escapeHtml(value) {     return String(value)         .replaceAll('&', '&amp;')         .replaceAll('<', '&lt;')         .replaceAll('>', '&gt;')         .replaceAll('"', '&quot;')         .replaceAll("'", '&#039;'); }  function getErrorMessage(error) {     if (error && typeof error.message === 'string' && error.message.trim()) {         return error.message;     }     return 'Something went wrong. Please try again.'; }   /* \vert{}-------------------------------------------------------------------------- \vert{} Initialization Lifecycle \vert{}-------------------------------------------------------------------------- */  document.addEventListener('DOMContentLoaded', () => {     initializeEnterpriseApp(); });  async function initializeEnterpriseApp() {     try {         setMinimumDate();         initializeTravelTabs();         initializeSearch();
+        initializeProviderApplication();         initializeNavigation();
+        if (window.SaraViaI18n) window.SaraViaI18n.init();         initializePiButton();                  await waitForPiSDK();     } catch (error) {         console.error('[SARA VIA Enterprise] Initialization error:', error);     } }   /* \vert{}-------------------------------------------------------------------------- \vert{} Pi SDK Async Loader \vert{}-------------------------------------------------------------------------- */  async function waitForPiSDK(timeout = 10000) {     const started = Date.now();      while (typeof window.Pi === 'undefined' && Date.now() - started < timeout) {         await new Promise((resolve) => setTimeout(resolve, 100));     }      if (typeof window.Pi === 'undefined') {         console.warn('[SARA VIA Enterprise] Pi SDK unavailable in this environment.');         return false;     }      if (window.__piSdkReady && typeof window.__piSdkReady.then === 'function') { const initialized = await window.__piSdkReady; if (!initialized) return false; }
+    appState.piReady = true;     console.info('[SARA VIA Enterprise] Pi SDK successfully initialized.');     return true; }   /* \vert{}-------------------------------------------------------------------------- \vert{} UI Components: Travel Tabs & Search Engine \vert{}-------------------------------------------------------------------------- */  function initializeTravelTabs() {     const tabs = Array.from(document.querySelectorAll('.travel-type-tab'));
     if (!tabs.length) return;
 
     tabs.forEach((tab) => {
@@ -44,16 +47,16 @@ const $$ = (selector) => Array.from(document.querySelectorAll(selector));  funct
             tab.classList.add('active');
             tab.setAttribute('aria-selected', 'true');
 
-            appState.travelType = tab.dataset.type || 'flights';
+            appState.travelType = tab.dataset.travelType || 'flights';
             updateSearchFields(appState.travelType);
         });
     });
 }
 
 function updateSearchFields(type) {
-    const from = $('#from');
-    const to = $('#to');
-    const departure = $('#departure');
+    const from = $('#departure');
+    const to = $('#destination');
+    const departure = $('#travelDate');
     const guests = $('#guests');
 
     if (!from || !to) return;
@@ -61,8 +64,9 @@ function updateSearchFields(type) {
     const placeholders = {
         hotels: { from: 'City or destination', to: 'Hotel or area', checkin: 'Check-in date' },
         experiences: { from: 'City or destination', to: 'Experience' },
+        cruises: { from: 'Departure port', to: 'Destination port' },
         transport: { from: 'Pickup location', to: 'Drop-off location' },
-        flights: { from: 'City or airport', to: 'Destination', departure: 'Departure date' }
+        flights: { from: 'Origin IATA code (e.g. AMM)', to: 'Destination IATA code (e.g. DXB)', departure: 'Departure date' }
     };
 
     const currentConfig = placeholders[type] || placeholders.flights;
@@ -82,30 +86,78 @@ function updateSearchFields(type) {
     }
 }
 
-function initializeSearch() {
+async function initializeSearch() {
     const form = $('#travelSearchForm');
     if (!form) return;
-
-    form.addEventListener('submit', (event) => {
+    form.addEventListener('submit', async (event) => {
         event.preventDefault();
-
-        const from = $('#from')?.value.trim() || '';
-        const to = $('#to')?.value.trim() || '';
-        const departure = $('#departure')?.value || '';
-        const guests = $('#guests')?.value || '2';
-
-        if (!from || !to) {
-            showNotification('Please enter your origin and destination.', 'warning');
-            return;
-        }
-
-        const searchPayload = { type: appState.travelType, from, to, departure, guests };
-        console.info('[SARA VIA Enterprise] Search dispatch:', searchPayload);
-
-        showNotification(`${capitalize(appState.travelType)} search parameters locked.`, 'success');
+        const origin = $('#departure')?.value.trim() || '';
+        const destination = $('#destination')?.value.trim() || '';
+        const departureDate = $('#travelDate')?.value || '';
+        const adults = Number($('#guests')?.value || 1);
+        if (!origin || !destination) return showNotification('Enter an origin and destination.', 'warning');
+        const type = appState.travelType;
+        const providerRoutes = { flights: '/api/travel/flights/search', hotels: '/api/travel/providers/hotels/search', cruises: '/api/travel/providers/cruises/search', experiences: '/api/travel/providers/tours/search', transport: '/api/travel/providers/logistics/quote' };
+        const endpoint = providerRoutes[type];
+        if (!endpoint) return showNotification('This category has no configured provider adapter.', 'warning');
+        const requestBody = type === 'flights'
+            ? { origin, destination, departureDate, adults }
+            : { origin, destination, departureDate, guests: adults, category: type };
+        const button = form.querySelector('button[type="submit"]');
+        if (button) button.disabled = true;
+        try {
+            const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) throw new Error(payload.error || 'Flight search failed.');
+            const results = payload.results ?? payload.quote ?? payload.tracking ?? [];
+            const resultCount = Array.isArray(results) ? results.length : (results ? 1 : 0);
+            const status = $('#piStatus');
+            if (status) status.textContent = resultCount ? JSON.stringify(results, null, 2) : 'The configured provider returned no results.';
+            showNotification(resultCount + ' provider result(s) retrieved.', 'success');
+        } catch (error) { showNotification(getErrorMessage(error), 'error'); }
+        finally { if (button) button.disabled = false; }
     });
 }
 
+
+
+function initializeProviderApplication() {
+    const form = $('#providerApplicationForm');
+    const status = $('#providerApplicationStatus');
+    if (!form) return;
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!appState.piConnected || !appState.accessToken) {
+            const auth = await connectPi();
+            if (!auth.success) {
+                if (status) status.textContent = 'Connect your Pi account before submitting.';
+                return;
+            }
+        }
+        const values = Object.fromEntries(new FormData(form).entries());
+        values.countryCode = String(values.countryCode || '').trim().toUpperCase();
+        const submit = form.querySelector('button[type="submit"]');
+        if (submit) submit.disabled = true;
+        if (status) status.textContent = 'Submitting your application securely…';
+        try {
+            const response = await fetch('/api/providers/applications', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + appState.accessToken },
+                body: JSON.stringify(values)
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) throw new Error(payload.error || 'Provider application could not be submitted.');
+            if (status) status.textContent = 'Application received. Our team will review your business details and contact you.';
+            form.reset();
+            showNotification('Provider application submitted for review.', 'success');
+        } catch (error) {
+            if (status) status.textContent = getErrorMessage(error);
+            showNotification(getErrorMessage(error), 'error');
+        } finally {
+            if (submit) submit.disabled = false;
+        }
+    });
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -114,7 +166,7 @@ function initializeSearch() {
 */
 
 async function connectPi() {
-    const button = $('#connectPiBtn');
+    const button = $('#connectPiButton');
 
     if (typeof window.Pi === 'undefined') {
         showNotification('Pi Browser is required for Pi authentication.', 'warning');
@@ -131,9 +183,12 @@ async function connectPi() {
             throw new Error('Pi authentication protocol failed to yield access token.');
         }
 
+        const verification = await fetch('/api/auth/me', { headers: { Authorization: `Bearer ${authResult.accessToken}` } });
+        const verified = await verification.json();
+        if (!verification.ok || !verified.authenticated || !verified.user) throw new Error('Pi account could not be verified by SARA VIA server.');
         appState.accessToken = authResult.accessToken;
         appState.user = authResult.user || null;
-        appState.verifiedUser = authResult.user || { username: 'SaraTraveler' };
+        appState.verifiedUser = verified.user;
         appState.piConnected = true;
 
         updatePiButton();
@@ -153,7 +208,13 @@ async function connectPi() {
 }
 
 async function onIncompletePaymentFound(payment) {
-    console.warn('[SARA VIA Enterprise] Interrupted transaction detected:', payment);
+    const paymentId = payment?.identifier || payment?.paymentId;
+    const txid = payment?.transaction?.txid;
+    if (!paymentId || !txid) { console.warn('[SARA VIA] Incomplete payment requires manual review.', payment); return; }
+    const response = await fetch('/api/payments/complete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paymentId, txid }) });
+    const result = await response.json();
+    if (!response.ok || !result.success || !result.completed) throw new Error(result.error || 'Incomplete payment recovery failed.');
+    showNotification('An interrupted Pi payment was verified and recovered.', 'success');
 }
 
 
@@ -196,39 +257,25 @@ async function createPiPayment({ amount, memo, metadata = {} }) {
                     onReadyForServerApproval: async (paymentId) => {
                         console.info('[SARA VIA Enterprise] Phase 1 - Approval Hook Triggered:', paymentId);
                         
-                        // محاولة إرسال الطلب للسيرفر، وفي حال عدم وجوده يتم التجاوز الاحترافي بسلاسة
-                        try {
-                            const response = await fetch('/api/payments/approve', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'Authorization': `Bearer ${appState.accessToken}`
-                                },
-                                body: JSON.stringify({ paymentId })
-                            });
-
-                            if (response.ok) {
-                                const payload = await response.json();
-                                if (payload.success) return;
-                            }
-                        } catch (networkError) {
-                            console.info('[SARA VIA Enterprise] Standalone sandbox mode: Bypassing remote server approval.');
-                        }
+                        const response = await fetch('/api/payments/approve', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${appState.accessToken}` },
+                            body: JSON.stringify({ paymentId })
+                        });
+                        const payload = await response.json();
+                        if (!response.ok || !payload.success || !payload.approved) throw new Error(payload.error || 'Server-side Pi approval failed.');
                     },
 
                     onReadyForServerCompletion: async (paymentId, txid) => {
-                        console.info('[SARA VIA Enterprise] Phase 2 & 3 - Transaction Completed:', { paymentId, txid });
-                        
-                        const transactionResult = {
-                            paymentId,
-                            txid,
-                            success: true,
-                            timestamp: new Date().toISOString()
-                        };
-
-                        appState.activePayment = transactionResult;
-                        showNotification('Transaction securely completed and verified.', 'success');
-                        resolve(transactionResult);
+                        try {
+                            const response = await fetch('/api/payments/complete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paymentId, txid }) });
+                            const payload = await response.json();
+                            if (!response.ok || !payload.success || !payload.completed) throw new Error(payload.error || 'Server-side Pi completion failed.');
+                            const transactionResult = { paymentId, txid, success: true, timestamp: new Date().toISOString(), verifiedByServer: true };
+                            appState.activePayment = transactionResult;
+                            showNotification('Pi payment verified and completed by the server.', 'success');
+                            resolve(transactionResult);
+                        } catch (error) { showNotification(getErrorMessage(error), 'error'); reject(error); }
                     },
 
                     onCancel: (paymentId) => {
@@ -257,14 +304,14 @@ async function createPiPayment({ amount, memo, metadata = {} }) {
 */
 
 function initializePiButton() {
-    const button = $('#connectPiBtn');
+    const button = $('#connectPiButton');
     if (!button) return;
 
     button.addEventListener('click', connectPi);
 }
 
 function setPiButtonLoading(isLoading) {
-    const button = $('#connectPiBtn');
+    const button = $('#connectPiButton');
     if (!button) return;
 
     button.disabled = isLoading;
@@ -278,7 +325,7 @@ function setPiButtonLoading(isLoading) {
 }
 
 function updatePiButton() {
-    const button = $('#connectPiBtn');
+    const button = $('#connectPiButton');
     if (!button) return;
 
     if (appState.piConnected) {
@@ -308,7 +355,7 @@ function initializeNavigation() {
 }
 
 function setMinimumDate() {
-    const input = $('#departure');
+    const input = $('#travelDate');
     if (!input) return;
 
     const today = new Date();

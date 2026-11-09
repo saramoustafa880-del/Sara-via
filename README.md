@@ -1,1 +1,110 @@
-# Sara-via
+# SARA VIA — Pi Network Testnet Travel Platform
+
+<p align="center">
+  <img src="assets/sara-via-symbol.webp" alt="SARA VIA globe and aircraft symbol" width="180">
+</p>
+
+<p align="center">
+  <img src="assets/sara-via-brand-hero.png" alt="SARA VIA — Travel, Book, Explore, Deliver" width="100%">
+</p>
+
+<p align="center"><strong>Travel • Book • Explore • Deliver</strong></p>
+
+SARA VIA is a travel and logistics platform prototype being prepared for **Pi Testnet integration and verification**. It is not a Mainnet release and does not represent live inventory unless a provider is configured and returns current results.
+
+## Brand system
+
+- **Primary symbol:** [SARA VIA globe and aircraft mark](assets/sara-via-mark.svg), used for the website header and browser favicon.
+- **Brand artwork:** [SARA VIA hero artwork](assets/sara-via-brand-hero.png), used for the README banner and social-sharing preview.
+- **Compact raster symbol:** [SARA VIA symbol](assets/sara-via-symbol.webp), available for app tiles and supported surfaces.
+- **Palette:** deep navy with restrained champagne-gold accents; maintain accessible contrast and clear space around the mark.
+- **Brand separation:** Pi is shown only where the app describes Pi Network integration or payment. The SARA VIA identity is independent and must not imply official Pi Network endorsement.
+
+## Current capabilities in this branch
+
+- Consistent SARA VIA globe-and-aircraft identity across the README, website header, favicon and social preview.
+- Pi SDK initialization in sandbox mode.
+- Server-side Pi user verification through `/api/auth/me`.
+- Fail-closed Pi payment approval and server-confirmed completion; incomplete-payment recovery is routed through the backend.
+- Express API mounted for local use and Netlify Functions.
+- Pi-verified, persistent booking-intent API backed by Supabase REST when configured.
+- Pi-authenticated service-provider application form with review status and no public collection of API keys or wallet seeds.
+- Initial Supabase schema for booking intents, subscriptions, shipments and partner profiles.
+- Flight offer search through the Amadeus **test** API when credentials are supplied.
+- Route calculation through Google Routes API when a server-side key is supplied.
+- Provider status endpoint: `GET /api/travel/status`.
+
+## Language selection
+
+The interface includes a persistent English/Arabic language selector. The selected language is saved in the browser, and Arabic switches the document to right-to-left direction. Additional translations can be added in `assets/i18n.js`.
+
+## Pi SDK integration
+
+The frontend loads the official Pi SDK from `https://sdk.minepi.com/pi-sdk.js` and initializes `Pi.init({ version: "2.0", sandbox: true })` before authentication or payment calls. Authentication requests only the `username` and `payments` scopes used by this app; the backend verifies the access token through the Platform API and owns payment approval/completion. Review the [official Pi Getting Started guide](https://developers.minepi.com/docs/build-first-app/GettingStarted), [Build an App guide](https://developers.minepi.com/docs/build-first-app/BuildAnApp), and [Client SDK reference](https://developers.minepi.com/docs/api-reference/SdkReference) before deployment.
+
+## Run locally
+
+Requires Node.js 20 or later.
+
+```bash
+npm ci
+cp .env.example .env
+npm run check:syntax
+npm test
+npm run build
+npm start
+```
+
+Open `http://localhost:3000`. For Pi authentication and payments, use the Pi Browser Testnet environment and configure a Testnet Server API key. Never expose provider keys or Pi server keys in frontend code. Use `.env.example` only as a variable-name template; replace every blank with credentials issued by the relevant provider in your deployment's encrypted environment settings.
+
+## Environment variables
+
+Apply [`supabase/migrations/001_initial_testnet_schema.sql`](supabase/migrations/001_initial_testnet_schema.sql) and [`supabase/migrations/002_service_provider_onboarding.sql`](supabase/migrations/002_service_provider_onboarding.sql) to your Supabase Testnet project before enabling bookings or provider applications. See [`.env.example`](.env.example) and the [Testnet developer handoff](docs/DEVELOPER_HANDOFF_TESTNET.md) for the exact credentials, secret-handling rules and provider onboarding requirements. Flight search requires `AMADEUS_CLIENT_ID` and `AMADEUS_CLIENT_SECRET` from an Amadeus test account. Route calculation requires `GOOGLE_ROUTES_API_KEY`. The keys are read only by server code.
+
+## API endpoints
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api` | API status |
+| GET | `/health` | Health check |
+| GET | `/api/config` | Public, non-secret environment status |
+| GET | `/api/travel/status` | Provider readiness |
+| POST | `/api/travel/flights/search` | Live Test API flight offers |
+| POST | `/api/travel/routes/compute` | Google route calculation |
+| POST | `/api/travel/providers/hotels/search` | Configured hotel provider search |
+| POST | `/api/travel/providers/cruises/search` | Configured cruise provider search |
+| POST | `/api/travel/providers/tours/search` | Configured tour/experience provider search |
+| POST | `/api/travel/providers/logistics/quote` | Configured transfer/logistics quote |
+| POST | `/api/travel/providers/logistics/track` | Configured carrier tracking |
+| POST | `/api/bookings/intents` | Create a Pi-verified booking intent (not a reservation confirmation) |
+| POST | `/api/providers/applications` | Submit a Pi-authenticated provider application |
+| GET | `/api/providers/applications/me` | Read own provider applications |
+| GET | `/api/bookings/intents/:id` | Read own booking intent |
+| POST | `/api/bookings/intents/:id/cancel` | Cancel an unvalidated intent |
+| GET | `/api/auth/me` | Verify Pi access token |
+| POST | `/api/payments/approve` | Verify and approve Pi payment |
+| POST | `/api/payments/complete` | Verify and complete Pi payment |
+
+## Service provider registration and credentials
+
+Service providers register with their Pi-authenticated account and submit their legal business name, service category, country, contact email, website and service description. Applications remain pending review until an administrator approves them. API keys and webhook secrets are **not** collected in the public registration form or stored in plaintext database columns. After KYB/review, an administrator provisions each provider integration through an approved secret manager and stores only a secret reference in the application database. See [`docs/DEVELOPER_HANDOFF_TESTNET.md`](docs/DEVELOPER_HANDOFF_TESTNET.md).
+
+## Booking, hotel, tour and logistics roadmap
+
+The branch includes a Pi-authenticated provider registration form and application API. New providers submit business details and remain pending review. Their secrets are not requested in the public form. The branch also includes a Supabase schema and Pi-verified booking-intent endpoints, but a booking intent is not a confirmed reservation. The database must be provisioned and configured, and provider-side offer validation/booking confirmation, payment-to-booking reconciliation, refunds and durable idempotency are still pending. Hotel, cruise, tour and logistics adapters require real provider contracts and credentials. Subscription state tables exist in the migration, but subscription billing/entitlement APIs are not yet implemented; no SARA VIA token contract is deployed.
+
+Recommended next implementation stages:
+
+1. Apply the included Supabase migration and extend it with provider reservation, payment ledger, refund, audit and idempotency records.
+2. Add a hotel inventory provider and a tour/operator adapter with normalized availability, local time zones, currency, taxes and cancellation terms.
+3. Add partner onboarding and logistics carrier webhooks with signed event verification and proof-of-delivery records.
+4. Add Testnet subscription and token contracts only after requirements, economics, access control, audit, tests and on-chain readback are complete. Do not imply a token has value or is deployed before verification.
+5. Run Pi payment, recovery, cancellation, duplicate callback, provider outage and booking/payment reconciliation tests before any Mainnet review.
+
+## Netlify
+
+Build command: `npm run build`; publish directory: `dist`; functions directory: `netlify/functions`. Configure environment variables in Netlify site settings. Do not put secrets in `netlify.toml` or commit a real `.env` file.
+
+## Mainnet readiness gate
+
+This branch is Testnet-only. Mainnet must remain disabled until the Pi team/platform permissions, production API configuration, provider contracts, security review, data retention/privacy review, financial reconciliation, and operational monitoring are explicitly verified. A Testnet success is not proof of Mainnet approval.
